@@ -76,6 +76,10 @@ class ClickHouseDataBackendSettings(BaseDataBackendSettings):
         LOCALE_ENCODING (str): The locale encoding to use when none is provided.
         READ_CHUNK_SIZE (int): The default chunk size for reading.
         WRITE_CHUNK_SIZE (int): The default chunk size for writing.
+        ASYNC_INSERT (int): Whether to use asynchronous inserts 1 for yes, 0 for no.
+        WAIT_FOR_ASYNC_INSERT (int): Whether to wait for ClickHouse to confirm
+            asynchronous inserts. 1 for yes, 0 for no. 1 is safest, but slows inserts
+            under load.
     """
 
     model_config = {
@@ -90,6 +94,8 @@ class ClickHouseDataBackendSettings(BaseDataBackendSettings):
     USERNAME: Optional[str] = None
     PASSWORD: Optional[str] = None
     CLIENT_OPTIONS: ClickHouseClientOptions = ClickHouseClientOptions()
+    ASYNC_INSERT: bool = True
+    WAIT_FOR_ASYNC_INSERT: bool = True
 
 
 class ClickHouseQuery(BaseQuery):
@@ -268,9 +274,7 @@ class ClickHouseDataBackend(
             filter_str = "\nWHERE 1=1 AND "
             filter_str += """
             AND
-            """.join(
-                query.where
-            )
+            """.join(query.where)
             sql += filter_str
 
         if query.sort:
@@ -415,7 +419,10 @@ class ClickHouseDataBackend(
                 # Allow ClickHouse to buffer the insert, and wait for the
                 # buffer to flush. Should be configurable, but I think these are
                 # reasonable defaults.
-                settings={"async_insert": 1, "wait_for_async_insert": 1},
+                settings={
+                    "async_insert": self.settings.ASYNC_INSERT,
+                    "wait_for_async_insert": self.settings.WAIT_FOR_ASYNC_INSERT,
+                },
             )
         except (ClickHouseError, BackendException) as error:
             if not ignore_errors:
